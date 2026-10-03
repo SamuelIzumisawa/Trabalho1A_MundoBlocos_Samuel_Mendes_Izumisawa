@@ -489,43 +489,119 @@ def exactly_one(lits):
 
 ## 6. Execução Passo a Passo: Gerar o CNF, Mapeamento e Execução
 
+Esta seção descreve o procedimento completo para reproduzir os resultados do trabalho: gerar o arquivo CNF, executá-lo no miniSAT e interpretar a saída numérica em plano em português.
+
 ### 6.1 Pré-requisitos
 
-- **Python 3.8+**
-- **miniSAT** instalado (`sudo apt install minisat` no Linux base Debian)
-
+- **Python 3.8+** instalado (`python3 --version` deve funcionar).
+- **miniSAT** instalado:
+  - Linux (Debian/Ubuntu): `sudo apt install minisat`
+  - macOS: `brew install minisat`
 ### 6.2 Estrutura de Pastas
 
 ```
 Trabalho1A_MundoBlocos_Samuel_Mendes_Izumisawa/
 ├── README.md
+├── latex/
+│   └── trabalho1A.tex
 ├── src/
-│   ├── bw2cnf_var.py
-│   └── interpretar.py
-├── cnf/
+│   ├── bw2cnf_var.py          ← gerador de CNF + .map
+│   └── interpretar.py         ← tradutor da saída do miniSAT
+├── cnf/                        ← arquivos .cnf por cenário
 │   ├── trab01_blocos2SAT_sit1.cnf
 │   ├── trab01_blocos2SAT_sit2.cnf
 │   └── trab01_blocos2SAT_sit3.cnf
-├── map/
+├── map/                        ← arquivos .map por cenário
 │   ├── trab01_blocos2SAT_sit1.map
 │   ├── trab01_blocos2SAT_sit2.map
 │   └── trab01_blocos2SAT_sit3.map
-└── results/
+└── results/                    ← saídas do miniSAT
     ├── resultado1.txt
     ├── resultado2.txt
     └── resultado3.txt
 ```
 
-### 6.3 Procedimento de Execução
+### 6.3 Procedimento para Cada Cenário
 
-Para cada cenário, o procedimento é:
+Para cada um dos 3 cenários, siga os 4 passos abaixo:
 
-1. Editar o topo do `bw2cnf_var.py` com `INITIAL`, `GOAL` e `HORIZON` do cenário.
-2. Executar `python3 bw2cnf_var.py` para gerar o CNF e o `.map`.
-3. Executar o miniSAT: `minisat trab01_blocos2SAT.cnf resultadoN.txt`.
-4. Executar `python3 interpretar.py resultadoN.txt --map trab01_blocos2SAT.map` para obter o plano em português.
+**Passo 1 — Configurar o cenário.** Edite o topo do arquivo `src/bw2cnf_var.py` definindo as três constantes:
 
-### 6.4 Verificação de Otimalidade
+```python
+INITIAL = {'c': (0, 0), 'a': (3, 0), 'b': (5, 0), 'd': (3, 1)}
+GOAL    = {'c': (0, 0), 'a': (0, 1), 'd': (2, 0), 'b': (5, 0)}
+HORIZON = 4
+```
+
+Cada entrada `bloco: (ponto, nivel)` representa a posição horizontal e o nível vertical do bloco. O `HORIZON` é o número máximo de passos de tempo permitidos.
+
+**Passo 2 — Gerar o CNF e o MAP.** Execute o gerador:
+
+```bash
+cd src
+python3 bw2cnf_var.py
+```
+
+Saída esperada:
+
+```
+Gerando CNF...
+Gerado: N variaveis, M clausulas
+Arquivos: trab01_blocos2SAT.cnf, trab01_blocos2SAT.map
+```
+
+Isso produz dois arquivos: `trab01_blocos2SAT.cnf` (a fórmula booleana) e `trab01_blocos2SAT.map` (o mapeamento entre IDs numéricos e os símbolos do domínio).
+
+**Passo 3 — Executar o miniSAT.** Resolva a fórmula:
+
+```bash
+minisat trab01_blocos2SAT.cnf resultado1.txt
+```
+
+Saída esperada (as primeiras linhas):
+
+```
+============================[ Problem Statistics ]=============================
+|  Number of variables:  ...
+|  Number of clauses:    ...
+...
+SATISFIABLE
+```
+
+O miniSAT escreve `SAT` ou `UNSAT` no arquivo `resultado1.txt`. Se for `UNSAT`, aumente o `HORIZON` no Passo 1 e repita.
+
+**Passo 4 — Interpretar o resultado.** Traduza a saída numérica em plano em português:
+
+```bash
+python3 interpretar.py resultado1.txt --map trab01_blocos2SAT.map
+```
+
+Saída esperada:
+
+```
+PLANO ENCONTRADO (N acoes):
+1. t=0: mover bloco 'd' para CIMA de 'c' em p=0
+2. t=1: mover bloco 'a' para CIMA de 'b' em p=5
+...
+
+ESTADO FINAL (t=T):
+a: ponto inicial p=0, nivel l=1
+...
+
+RELACOES 'on' em t=T:
+a esta sobre: c
+...
+```
+
+### 6.4 Configuração dos 3 Cenários
+
+| Cenário | `INITIAL` | `GOAL` | `HORIZON` |
+|---------|-----------|--------|-----------|
+| 1 | `{'c':(0,0), 'a':(3,0), 'b':(5,0), 'd':(3,1)}` | `{'c':(0,0), 'a':(0,1), 'd':(2,0), 'b':(5,0)}` | 4 |
+| 2 | `{'a':(0,1), 'b':(1,1), 'c':(0,0), 'd':(3,0)}` | `{'a':(3,2), 'b':(4,2), 'c':(3,1), 'd':(3,0)}` | 5 |
+| 3 | `{'c':(0,0), 'a':(3,0), 'b':(5,0), 'd':(3,1)}` | `{'a':(0,1), 'b':(1,1), 'c':(0,0), 'd':(3,0)}` | 6 |
+
+### 6.5 Verificação de Otimalidade
 
 Para cada cenário, executamos o miniSAT com `HORIZON` crescente a partir de `0` até obter `SATISFIABLE`. O menor `HORIZON` que satisfaz é o comprimento mínimo do plano.
 
@@ -534,7 +610,6 @@ Para cada cenário, executamos o miniSAT com `HORIZON` crescente a partir de `0`
 | 1 | T = 3 | T = 4 | **4** |
 | 2 | T = 4 | T = 5 | **5** |
 | 3 | T = 5 | T = 6 | **6** |
-
 ---
 
 ## 7. Interpretação da Saída do SAT Solver

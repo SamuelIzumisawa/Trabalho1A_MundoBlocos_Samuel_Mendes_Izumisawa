@@ -627,11 +627,18 @@ $stable(b,p,l,t)$ & cláusula de cardinalidade \\
 \section{Execução Passo a Passo: Gerar o CNF, Mapeamento e Execução}
 \label{sec:execucao}
 
+Esta seção descreve o procedimento completo para reproduzir os resultados do trabalho: gerar o arquivo CNF, executá-lo no miniSAT e interpretar a saída numérica em plano em português.
+
 \subsection{Pré-requisitos}
 
 \begin{itemize}[leftmargin=1.2cm]
-    \item Python 3.8+
-    \item miniSAT instalado (\texttt{sudo apt install minisat} no Linux base Debian)
+    \item \textbf{Python 3.8+} instalado (\texttt{python3 --version} deve funcionar).
+    \item \textbf{miniSAT} instalado:
+    \begin{itemize}
+        \item Linux (Debian/Ubuntu): \texttt{sudo apt install minisat}
+        \item macOS: \texttt{brew install minisat}
+        \item Windows: usar WSL ou baixar binário de \url{https://github.com/niklasso/minisat}
+    \end{itemize}
 \end{itemize}
 
 \subsection{Estrutura de Pastas}
@@ -639,9 +646,11 @@ $stable(b,p,l,t)$ & cláusula de cardinalidade \\
 \begin{lstlisting}
 Trabalho1A_MundoBlocos_Samuel_Mendes_Izumisawa/
 |-- README.md
+|-- latex/
+|   |-- trabalho1A.tex
 |-- src/
-|   |-- bw2cnf_var.py
-|   |-- interpretar.py
+|   |-- bw2cnf_var.py          <- gerador de CNF + .map
+|   |-- interpretar.py         <- tradutor da saida do miniSAT
 |-- cnf/
 |   |-- trab01_blocos2SAT_sit1.cnf
 |   |-- trab01_blocos2SAT_sit2.cnf
@@ -656,28 +665,121 @@ Trabalho1A_MundoBlocos_Samuel_Mendes_Izumisawa/
 |   |-- resultado3.txt
 \end{lstlisting}
 
-\subsection{Procedimento de Execução}
+\subsection{Procedimento para Cada Cenário}
 
-Para cada cenário, o procedimento é:
+Para cada um dos 3 cenários, siga os 4 passos abaixo.
 
-\begin{enumerate}[leftmargin=1.2cm]
-    \item Editar o topo do \texttt{bw2cnf\_var.py} com \texttt{INITIAL}, \texttt{GOAL} e \texttt{HORIZON} do cenário.
-    \item Executar \texttt{python3 bw2cnf\_var.py} para gerar o arquivo CNF e o arquivo de mapeamento.
-    \item Executar o miniSAT sobre o CNF gerado (\texttt{minisat trab01\_blocos2SAT.cnf resultadoN.txt}).
-    \item Executar \texttt{python3 interpretar.py resultadoN.txt --map trab01\_blocos2SAT.map} para obter o plano em português.
-\end{enumerate}
+\paragraph{Passo 1 — Configurar o cenário.}
+Edite o topo do arquivo \texttt{src/bw2cnf\_var.py} definindo as três constantes:
+
+\begin{lstlisting}[language=Python]
+INITIAL = {'c': (0, 0), 'a': (3, 0), 'b': (5, 0), 'd': (3, 1)}
+GOAL    = {'c': (0, 0), 'a': (0, 1), 'd': (2, 0), 'b': (5, 0)}
+HORIZON = 4
+\end{lstlisting}
+
+Cada entrada \texttt{bloco: (ponto, nivel)} representa a posição horizontal e o nível vertical do bloco. O \texttt{HORIZON} é o número máximo de passos de tempo permitidos.
+
+\paragraph{Passo 2 — Gerar o CNF e o MAP.}
+Execute o gerador:
+
+\begin{lstlisting}[language=bash]
+cd src
+python3 bw2cnf_var.py
+\end{lstlisting}
+
+Saída esperada:
+
+\begin{lstlisting}
+Gerando CNF...
+Gerado: N variaveis, M clausulas
+Arquivos: trab01_blocos2SAT.cnf, trab01_blocos2SAT.map
+\end{lstlisting}
+
+Isso produz dois arquivos: \texttt{trab01\_blocos2SAT.cnf} (a fórmula booleana) e \texttt{trab01\_blocos2SAT.map} (o mapeamento entre IDs numéricos e os símbolos do domínio).
+
+\paragraph{Passo 3 — Executar o miniSAT.}
+Resolva a fórmula:
+
+\begin{lstlisting}[language=bash]
+minisat trab01_blocos2SAT.cnf resultado1.txt
+\end{lstlisting}
+
+Saída esperada (as primeiras linhas):
+
+\begin{lstlisting}
+============================[ Problem Statistics ]=============================
+|  Number of variables:  ...
+|  Number of clauses:    ...
+...
+SATISFIABLE
+\end{lstlisting}
+
+O miniSAT escreve \texttt{SAT} ou \texttt{UNSAT} no arquivo \texttt{resultado1.txt}. Se for \texttt{UNSAT}, aumente o \texttt{HORIZON} no Passo 1 e repita.
+
+\paragraph{Passo 4 — Interpretar o resultado.}
+Traduza a saída numérica em plano em português:
+
+\begin{lstlisting}[language=bash]
+python3 interpretar.py resultado1.txt --map trab01_blocos2SAT.map
+\end{lstlisting}
+
+Saída esperada:
+
+\begin{lstlisting}
+PLANO ENCONTRADO (N acoes):
+1. t=0: mover bloco 'd' para CIMA de 'c' em p=0
+2. t=1: mover bloco 'a' para CIMA de 'b' em p=5
+...
+
+ESTADO FINAL (t=T):
+a: ponto inicial p=0, nivel l=1
+...
+
+RELACOES 'on' em t=T:
+a esta sobre: c
+...
+\end{lstlisting}
+
+\subsection{Configuração dos 3 Cenários}
+
+\begin{table}[h!]
+\centering
+\small
+\begin{tabular}{@{}clll@{}}
+\toprule
+\textbf{Cenário} & \texttt{INITIAL} & \texttt{GOAL} & \texttt{HORIZON} \\
+\midrule
+1 & \texttt{\{'c':(0,0), 'a':(3,0),} & \texttt{\{'c':(0,0), 'a':(0,1),} & 4 \\
+  & \texttt{'b':(5,0), 'd':(3,1)\}} & \texttt{'d':(2,0), 'b':(5,0)\}} & \\
+\midrule
+2 & \texttt{\{'a':(0,1), 'b':(1,1),} & \texttt{\{'a':(3,2), 'b':(4,2),} & 5 \\
+  & \texttt{'c':(0,0), 'd':(3,0)\}} & \texttt{'c':(3,1), 'd':(3,0)\}} & \\
+\midrule
+3 & \texttt{\{'c':(0,0), 'a':(3,0),} & \texttt{\{'a':(0,1), 'b':(1,1),} & 6 \\
+  & \texttt{'b':(5,0), 'd':(3,1)\}} & \texttt{'c':(0,0), 'd':(3,0)\}} & \\
+\bottomrule
+\end{tabular}
+\caption{Configuração dos três cenários.}
+\end{table}
 
 \subsection{Verificação de Otimalidade}
 
 Para cada cenário, executamos o miniSAT com \texttt{HORIZON} crescente a partir de $0$ até obter \texttt{SATISFIABLE}. O menor \texttt{HORIZON} que satisfaz é o comprimento mínimo do plano.
 
-Os resultados obtidos foram:
-
-\begin{itemize}[leftmargin=1.2cm]
-    \item \textbf{Cenário 1}: UNSAT para $T = 0,1,2,3$; SAT em $T = 4$ $\Rightarrow$ mínimo $= 4$.
-    \item \textbf{Cenário 2}: UNSAT para $T = 0,1,2,3,4$; SAT em $T = 5$ $\Rightarrow$ mínimo $= 5$.
-    \item \textbf{Cenário 3}: UNSAT para $T = 0,1,2,3,4,5$; SAT em $T = 6$ $\Rightarrow$ mínimo $= 6$.
-\end{itemize}
+\begin{table}[h!]
+\centering
+\begin{tabular}{@{}cccc@{}}
+\toprule
+\textbf{Cenário} & \textbf{UNSAT até} & \textbf{SAT em} & \textbf{Mínimo} \\
+\midrule
+1 & T = 3 & T = 4 & \textbf{4} \\
+2 & T = 4 & T = 5 & \textbf{5} \\
+3 & T = 5 & T = 6 & \textbf{6} \\
+\bottomrule
+\end{tabular}
+\caption{Verificação de otimalidade dos planos.}
+\end{table}
 
 % ============================================================
 % SEÇÃO 7 — INTERPRETAÇÃO DA SAÍDA
