@@ -1,0 +1,742 @@
+\documentclass[12pt,a4paper]{article}
+
+% ============================================================
+% PACOTES
+% ============================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[portuguese]{babel}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{tikz}
+\usepackage{longtable}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\geometry{margin=2.5cm}
+
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codeblue}{rgb}{0.1,0.1,0.6}
+\definecolor{backcolour}{rgb}{0.96,0.96,0.96}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{codeblue},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codegreen},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2,
+    frame=single
+}
+\lstset{style=mystyle}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Fundamentos de Inteligência Artificial}
+\cfoot{\thepage}
+
+\title{
+    \vspace{-1.5cm}
+    \textbf{Fundamentos de Inteligência Artificial}\\[0.3cm]
+    \large 1º Trabalho — Trabalho 1A\\[0.5cm]
+    \Huge \textbf{Representação do Conhecimento e Raciocínio Automatizado para Gerar Plano que Empilha Blocos de Diferentes Dimensões}\\[0.4cm]
+    \large Mundo dos Blocos de Tamanho Variável via SAT Solver
+}
+\author{Samuel Mendes Izumisawa}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+Este documento descreve a solução completa para o problema de planejamento no Mundo dos Blocos de Tamanho Variável, utilizando Lógica de Primeira Ordem (LPO) para a representação formal e Lógica Proposicional (codificação CNF) para a resolução automatizada via SAT Solver (miniSAT). O trabalho estende o modelo clássico de blocos de tamanho unitário para blocos com comprimentos variáveis ($\ell(b) \in \{1,2,3\}$), permitindo empilhamentos com apoios múltiplos (pontes) e posicionamento horizontal livre sobre a mesa. São apresentadas a descrição formal, a codificação CNF, três cenários completos codificados, a execução passo a passo com o miniSAT e a interpretação da saída numérica em linguagem natural. Adicionalmente, considera-se ordem parcial entre metas.
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ============================================================
+% SEÇÃO 1 — INTRODUÇÃO
+% ============================================================
+\section{Introdução ao Problema}
+\label{sec:introducao}
+
+O problema do Mundo dos Blocos (\emph{Blocks World}) é um dos domínios clássicos de planejamento em Inteligência Artificial. Na sua versão tradicional, todos os blocos são cubos de tamanho unitário e o espaço é discretizado em posições fixas de uma mesa. Neste trabalho, estendemos esse modelo para um cenário significativamente mais rico e realista:
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item \textbf{Blocos de comprimentos variáveis}: cada bloco $b$ possui um comprimento $\ell(b)$ medido em unidades de comprimento (uc), podendo assumir valores como 1, 2 ou 3.
+    \item \textbf{Posicionamento horizontal livre}: blocos podem ser colocados em qualquer ponto inicial inteiro da mesa, desde que caibam no intervalo $[0,6]$.
+    \item \textbf{Apoios múltiplos (pontes)}: um bloco maior pode apoiar-se simultaneamente sobre dois ou mais blocos menores, desde que a regra de estabilidade seja respeitada.
+    \item \textbf{Espaços verticais e horizontais livres}: slots vazios podem existir entre blocos, tanto na horizontal quanto na vertical.
+    \item \textbf{Ação qualitativa}: a ação de movimento é expressa de forma simbólica (\texttt{move(b, y, p)}), tornando o plano legível em linguagem natural.
+\end{itemize}
+
+\subsection{Motivação}
+
+A principal motivação para estender o Mundo dos Blocos é aproximar o modelo formal de situações reais de planejamento, onde objetos têm dimensões distintas e podem ser organizados de formas não triviais. Essa extensão exige:
+
+\begin{enumerate}[leftmargin=1.2cm]
+    \item Uma representação formal mais expressiva em LPO, com predicados para posição, nível, comprimento e estabilidade.
+    \item Uma codificação proposicional (CNF) que trate adequadamente exclusão horizontal, estabilidade e apoios múltiplos.
+    \item Uma interpretação da saída do SAT Solver que reconstrua as relações \texttt{on} a posteriori.
+\end{enumerate}
+
+\subsection{Objetivos do Trabalho}
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item Propor uma representação em Lógica de Primeira Ordem para o mundo dos blocos com dimensões diferentes (Situações 1, 2 e 3).
+    \item Indicar, para cada elemento adicionado, as ações associadas (adds, deletes).
+    \item Responder manualmente aos itens 1--3 do enunciado (execução manual dos planos).
+    \item Considerar ordem parcial entre metas ($A \prec_P B$).
+    \item Codificar a solução em Lógica Proposicional (CNF) e executar via miniSAT.
+    \item Documentar todos os artefatos e interpretar a saída do SAT Solver em linguagem natural.
+\end{itemize}
+
+\subsection{Organização do Documento}
+
+O restante deste documento está organizado nas 7 seções exigidas pelo enunciado: a Seção~\ref{sec:lpo} apresenta a descrição formal em LPO (incluindo ação \texttt{move}, estabilidade, derivação de \texttt{on} e ordem parcial); a Seção~\ref{sec:cnf} detalha a codificação CNF; a Seção~\ref{sec:cenarios} descreve os três cenários, a execução manual e os resultados do miniSAT; a Seção~\ref{sec:mapeamento} apresenta o mapeamento formal $\to$ código; a Seção~\ref{sec:execucao} mostra a execução passo a passo; e a Seção~\ref{sec:interpretacao} explica a interpretação da saída do SAT Solver.
+
+% ============================================================
+% SEÇÃO 2 — DESCRIÇÃO FORMAL
+% ============================================================
+\section{Descrição Formal do Mundo dos Blocos de Tamanho Variado}
+\label{sec:lpo}
+
+\subsection{Domínios e Sorts}
+
+A assinatura da linguagem de primeira ordem é definida pelos seguintes sorts (domínios):
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item $\mathcal{B} = \{a, b, c, d\}$: conjunto de blocos.
+    \item $\mathcal{X} = \{0, 1, 2, 3, 4, 5, 6\}$: conjunto de pontos inteiros do eixo horizontal da mesa.
+    \item $\mathcal{L} = \{0, 1, 2, 3\}$: conjunto de níveis verticais, onde $0$ representa a mesa e $l > 0$ representa empilhamento.
+    \item $\mathcal{T} = \{0, 1, \dots, T\}$: conjunto de instantes de tempo.
+    \item $\{T\}$: constante que representa a mesa.
+\end{itemize}
+
+\subsection{Funções}
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item $\ell : \mathcal{B} \to \mathbb{N}$: função de comprimento do bloco. Valores: $\ell(a)=1$, $\ell(b)=1$, $\ell(c)=2$, $\ell(d)=3$.
+    \item $span : \mathcal{B} \times \mathcal{X} \to 2^{\mathcal{X}}$: função que retorna o conjunto de slots cobertos por um bloco $b$ começando no ponto $p$:
+    \[
+    span(b,p) = \{p, p+1, \dots, p+\ell(b)-1\}.
+    \]
+\end{itemize}
+
+\subsection{Predicados Fluentes}
+
+Os predicados fluentes variam com o tempo $t \in \mathcal{T}$:
+
+\begin{longtable}{@{}p{4cm}p{10cm}@{}}
+\toprule
+\textbf{Predicado} & \textbf{Significado} \\
+\midrule
+\endhead
+$at(b,p,t)$ & O bloco $b$ começa no ponto $p$ no instante $t$. \\
+$lev(b,l,t)$ & O bloco $b$ está no nível $l$ no instante $t$ ($l=0$ = mesa, $l>0$ = empilhado). \\
+$clr(b,t)$ & O topo do bloco $b$ está livre no instante $t$. \\
+$on(b,y,t)$ & \emph{Derivado}: o bloco $b$ está apoiado sobre $y$ no instante $t$ ($y \in \mathcal{B} \cup \{T\}$). \\
+\bottomrule
+\end{longtable}
+
+\subsection{Predicados Estáticos}
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item $overlap(b,p_b,y,p_y) \leftrightarrow span(b,p_b) \cap span(y,p_y) \neq \emptyset$: os spans de $b$ e $y$ se sobrepõem.
+    \item $cov(b,s,l,t) \leftrightarrow \exists p.\, at(b,p,t) \wedge lev(b,l,t) \wedge s \in span(b,p)$: o bloco $b$ cobre o slot $s$ no nível $l$ no instante $t$.
+\end{itemize}
+
+\subsection{Relação Fundamental \texttt{on}}
+
+A relação $on(b,y,t)$ \textbf{não é codificada diretamente} como variável proposicional. Ela é derivada a posteriori:
+
+\[
+on(b,y,t) \leftrightarrow \exists p_b, p_y, l.\;
+at(b,p_b,t) \wedge at(y,p_y,t) \wedge lev(b,l,t) \wedge lev(y,l-1,t) \wedge overlap(b,p_b,y,p_y)
+\]
+
+Se $l=0$, então $y = T$ (o bloco está diretamente sobre a mesa):
+\[
+lev(b,0,t) \to on(b,T,t).
+\]
+
+Essa escolha reduz o número de variáveis proposicionais e facilita a leitura do plano.
+
+\subsection{Especificação da Ação \texttt{move}}
+\label{sec:move}
+
+A ação de movimento é expressa de forma \textbf{qualitativa}, com três parâmetros simbólicos:
+
+\[
+move(b, y, p, t)
+\]
+
+\textbf{Significado}: ``Mover o bloco $b$ para cima do bloco $y$ (ou da mesa $T$), começando no ponto $p$, no instante $t$''.
+
+\textbf{Exemplo}: $move(d, c, 0, t{=}1)$ = ``mover $d$ para cima de $c$, começando no ponto $0$, no instante $1$''.
+
+\subsubsection{Pré-condições}
+
+\begin{enumerate}[leftmargin=1.2cm]
+    \item $clr(b,t)$ — o topo do próprio bloco $b$ está livre (nada acima dele).
+    \item O destino não coincide com a posição atual de $b$ (evita \emph{no-op}).
+    \item Se $y \in \mathcal{B}$: o span de $b$ em $p$ deve sobrepor o span de $y$ — isto é, $\exists p_y.\; at(y,p_y,t) \wedge overlap(b,p,y,p_y)$.
+    \item Todos os slots cobertos por $b$ no nível-alvo devem estar livres de outros blocos, \textbf{exceto} aqueles que o próprio $b$ já ocupava.
+    \item $stable(b,p,lev(y)+1,t)$ — o destino satisfaz a regra de estabilidade (Seção~\ref{sec:estabilidade}).
+\end{enumerate}
+
+\noindent\textbf{Observação importante}: a pré-condição $clr(y,t)$ (``topo de $y$ totalmente livre'') \textbf{não é usada} para blocos com comprimentos variáveis. Exigi-la bloquearia indevidamente o empilhamento de múltiplos blocos sobre o mesmo bloco-alvo em slots distintos. A verificação correta é feita \emph{slot a slot} no nível alvo (item 4).
+
+\subsubsection{Efeitos (Adds e Deletes)}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Efeito} & \textbf{Tipo} \\
+\midrule
+$at(b,p,t+1)$ & Add \\
+$lev(b, lev(y)+1, t+1)$ & Add \\
+$\neg at(b, p_{ant}, t+1)$ & Delete \\
+$\neg lev(b, l_{ant}, t+1)$ & Delete \\
+$\neg clr(y,t+1)$ (se $y \in \mathcal{B}$ e nada mais acima) & Delete condicional \\
+$clr(b,t+1)$ se nada acima de $b$ & Add condicional \\
+\bottomrule
+\end{tabular}
+\caption{Efeitos da ação \texttt{move}.}
+\end{table}
+
+\subsection{Regra de Estabilidade e Derivação de \texttt{on}}
+\label{sec:estabilidade}
+
+\subsubsection{Regra de Estabilidade}
+
+Um bloco $b$ no nível $l > 0$ só pode ser colocado em posição $p$ se pelo menos $\lceil \ell(b)/2 \rceil$ slots sob seu span estiverem ocupados no nível $l-1$:
+
+\[
+stable(b,p,l,t) \leftrightarrow \#\{s \in span(b,p) : \exists b' \neq b,\; cov(b',s,l-1,t)\} \ge \left\lceil \frac{\ell(b)}{2} \right\rceil
+\]
+
+\textbf{Consequência prática}: um bloco de comprimento 3 (como $d$) pode ficar em ponte sobre dois blocos de comprimento 1 separados por um slot vazio, mas não pode ficar apoiado em apenas um ponto.
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{@{}ccccc@{}}
+\toprule
+\textbf{Bloco} & $\ell(b)$ & $\lceil \ell/2 \rceil$ & \textbf{Slots mínimos abaixo} \\
+\midrule
+$a$ & 1 & 1 & 1 \\
+$b$ & 1 & 1 & 1 \\
+$c$ & 2 & 1 & 1 \\
+$d$ & 3 & 2 & 2 \\
+\bottomrule
+\end{tabular}
+\caption{Requisitos de estabilidade por bloco.}
+\end{table}
+
+\subsubsection{Derivação da Relação \texttt{on}}
+
+A relação $on(b,y,T)$ no estado final é reconstruída por:
+
+\begin{enumerate}[leftmargin=1.2cm]
+    \item Ler $at(b,p_b,T)$ e $lev(b,l_b,T)$ — posição e nível de $b$.
+    \item Se $l_b = 0$: $on(b,T,T)$ (sobre a mesa).
+    \item Se $l_b > 0$: procurar blocos $y$ com $lev(y, l_b-1, T)$ cujo span sobrepõe o span de $b$.
+\end{enumerate}
+
+\subsection{Ordem Parcial entre Metas}
+
+Conforme o item 4 do enunciado, a solução deve considerar ordem parcial entre metas:
+
+\[
+A \prec_P B
+\]
+
+\textbf{Interpretação}: a meta $A$ deve ser satisfeita antes da meta $B$.
+
+\subsubsection{Codificação em LPO}
+
+Se $\phi_1 \prec_P \phi_2$, então para todo instante $t$:
+\[
+\neg \phi_2(t) \vee \phi_1(t') \quad \text{para algum } t' \le t
+\]
+
+\subsubsection{Codificação em CNF}
+
+Para cada par de metas $(\phi_1, \phi_2)$ com $\phi_1 \prec_P \phi_2$:
+\[
+\bigwedge_{t=0}^{T} \left( \neg \phi_2(t) \vee \bigvee_{t'=0}^{t} \phi_1(t') \right)
+\]
+
+\subsubsection{Exemplo na Situação 1}
+
+Seja a ordem parcial: $on(a,c) \prec_P on(d,T)$ (primeiro $a$ sobre $c$, depois $d$ na mesa). Isso força que o plano satisfaça $a$ sobre $c$ antes de $d$ tocar a mesa.
+
+% ============================================================
+% SEÇÃO 3 — CODIFICAÇÃO CNF
+% ============================================================
+\section{Codificação CNF}
+\label{sec:cnf}
+
+\subsection{Variáveis Proposicionais}
+
+Para $T$ passos de planejamento, definimos as seguintes variáveis:
+
+\begin{longtable}{@{}p{3.5cm}p{9.5cm}@{}}
+\toprule
+\textbf{Variável} & \textbf{Índices} \\
+\midrule
+\endhead
+$at(b,p,t)$ & $b \in \mathcal{B}$, $p \in [0, 6-\ell(b)]$, $t \in [0,T]$ \\
+$lev(b,l,t)$ & $b \in \mathcal{B}$, $l \in [0,3]$, $t \in [0,T]$ \\
+$clr(b,t)$ & $b \in \mathcal{B}$, $t \in [0,T]$ \\
+$mv(b,y,p,t)$ & $b \in \mathcal{B}$, $y \in \mathcal{B} \cup \{T\}$ com $y \neq b$, $p \in [0,6-\ell(b)]$, $t \in [0,T-1]$ \\
+\bottomrule
+\end{longtable}
+
+\subsection{Grupos de Cláusulas}
+
+\begin{enumerate}[leftmargin=1.2cm]
+    \item \textbf{Estado inicial}: cláusulas unitárias fixando $at$, $lev$ em $t=0$.
+    \item \textbf{Meta}: cláusulas unitárias em $t=T$.
+    \item \textbf{Unicidade de posição}: para cada $b,t$: $\bigvee_p at(b,p,t)$ e $\neg at(b,p_1,t) \vee \neg at(b,p_2,t)$ para $p_1 \neq p_2$.
+    \item \textbf{Unicidade de nível}: análogo para $lev$.
+    \item \textbf{Exclusão horizontal}: dois blocos no mesmo nível não podem compartilhar slots.
+    \item \textbf{Estabilidade}: para $b$ em $(p,l)$ com $l>0$, pelo menos $\lceil \ell(b)/2 \rceil$ slots abaixo ocupados.
+    \item \textbf{Clear}: $clr(b,t)$ sse nada acima de $b$.
+    \item \textbf{Pré-condições de $move(b,y,p,t)$}: as 5 condições listadas na Seção~\ref{sec:move}.
+    \item \textbf{Efeitos de $move$}: as consequências listadas na Seção~\ref{sec:move}.
+    \item \textbf{Frame axioms}: persistência de $at$, $lev$, $clr$ quando o bloco não se move.
+    \item \textbf{Explicação de mudança}: se $at$ ou $lev$ de $b$ mudam entre $t$ e $t+1$, alguma ação de $b$ deve ocorrer em $t$. Cláusula essencial — sem ela o solver pode ``teleportar'' blocos sem ação.
+    \item \textbf{Ação única por passo}: $\neg mv(b_1,y_1,p_1,t) \vee \neg mv(b_2,y_2,p_2,t)$ para ações distintas.
+\end{enumerate}
+
+\subsection{Relação \texttt{on} — Derivada, Não Codificada}
+
+Diferente do modelo anterior, não criamos variáveis para $on(b,y,t)$. A relação é derivada a posteriori:
+\[
+on(b,y,t) \leftrightarrow \exists p, p_y, l.\; at(b,p,t) \wedge at(y,p_y,t) \wedge lev(b,l,t) \wedge lev(y,l-1,t) \wedge overlap(b,p,y,p_y)
+\]
+
+Isso mantém o número de variáveis proposicionais enxuto e permite que o script \texttt{interpretar.py} reconstrua as relações $on$ para apresentar o plano em linguagem natural.
+
+% ============================================================
+% SEÇÃO 4 — EXEMPLOS DOS 3 CENÁRIOS
+% ============================================================
+\section{Exemplos dos 3 Cenários Codificados para CNF em LP}
+\label{sec:cenarios}
+
+\subsection{Blocos e Comprimentos (comum a todos)}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{@{}ccccc@{}}
+\toprule
+\textbf{Bloco} & \textbf{Cor} & $\ell(b)$ & \textbf{Posições válidas} \\
+\midrule
+$a$ & Roxo & 1 & $\{0,1,2,3,4,5\}$ \\
+$b$ & Amarelo & 1 & $\{0,1,2,3,4,5\}$ \\
+$c$ & Azul claro & 2 & $\{0,1,2,3,4\}$ \\
+$d$ & Vermelho & 3 & $\{0,1,2,3\}$ \\
+\bottomrule
+\end{tabular}
+\caption{Blocos e comprimentos.}
+\end{table}
+
+A mesa é um segmento de reta cujas extremidades são os pontos inteiros de $0$ a $6$. Os slots são intervalos unitários $s_i = [i, i+1]$ para $i \in \{0,\dots,5\}$. O número de slots é 6, não 7.
+
+\subsection{Situação 1}
+
+\subsubsection{Estado Inicial $S_0$}
+
+\[
+\begin{aligned}
+&at(c, 0, 0) \wedge lev(c, 0, 0) \\
+&at(a, 3, 0) \wedge lev(a, 0, 0) \\
+&at(b, 5, 0) \wedge lev(b, 0, 0) \\
+&at(d, 3, 0) \wedge lev(d, 1, 0)
+\end{aligned}
+\]
+
+Relações $on$ em $t=0$:
+\[
+on(c,T,0) \quad on(a,T,0) \quad on(b,T,0) \quad on(d,a,0) \wedge on(d,b,0)
+\]
+
+Note que $d$ está em ponte sobre $a$ e $b$, com o slot $s_4$ vazio (mas bloqueado para receber um bloco por estar sob $d$).
+
+\subsubsection{Estado Meta $S_{f4}$}
+
+\[
+at(c,0,T) \wedge lev(c,0,T) \quad at(a,0,T) \wedge lev(a,1,T) \quad at(d,2,T) \wedge lev(d,0,T) \quad at(b,5,T) \wedge lev(b,0,T)
+\]
+Relações $on$: $on(c,T,T)$, $on(d,T,T)$, $on(b,T,T)$, $on(a,c,T)$.
+
+\subsection{Situação 2}
+
+\subsubsection{Estado Inicial $S_0$}
+
+\[
+at(c,0,0) \wedge lev(c,0,0) \quad at(a,0,0) \wedge lev(a,1,0) \quad at(b,1,0) \wedge lev(b,1,0) \quad at(d,3,0) \wedge lev(d,0,0)
+\]
+
+\subsubsection{Estado Meta $S_5$}
+
+\[
+at(d,3,T) \wedge lev(d,0,T) \quad at(c,3,T) \wedge lev(c,1,T) \quad at(a,3,T) \wedge lev(a,2,T) \quad at(b,4,T) \wedge lev(b,2,T)
+\]
+
+\subsection{Situação 3}
+
+\subsubsection{Estado Inicial $S_0$}
+
+\[
+at(c,0,0) \wedge lev(c,0,0) \quad at(a,3,0) \wedge lev(a,0,0) \quad at(b,5,0) \wedge lev(b,0,0) \quad at(d,3,0) \wedge lev(d,1,0)
+\]
+
+\subsubsection{Estado Meta $S_7$}
+
+\[
+at(c,0,T) \wedge lev(c,0,T) \quad at(a,0,T) \wedge lev(a,1,T) \quad at(b,1,T) \wedge lev(b,1,T) \quad at(d,3,T) \wedge lev(d,0,T)
+\]
+
+\subsection{Execução Manual dos Planos}
+
+\subsubsection{Situação 1: $S_0 \to S_{f4}$}
+
+\textbf{Objetivo}: $a$ sobre $c$, $c$ na mesa em $p=0$, $d$ na mesa em $p=2$, $b$ na mesa em $p=5$.
+
+\textbf{Plano manual}:
+\begin{enumerate}[leftmargin=1.2cm]
+    \item $t=0$: $move(d, c, 0, 0)$ — mover $d$ para cima de $c$ em $p=0$.\\
+    \emph{Pré-condições}: $clr(d,0)=\top$, span de $d$ em $p=0$ = $\{0,1,2\}$, span de $c$ em $p=0$ = $\{0,1\}$ $\Rightarrow$ overlap $\top$, slots livres $\top$, $stable(d,0,1,0)$: slots $\{0,1,2\}$ ocupados por $c$ = 2 slots, $\lceil 3/2 \rceil = 2$ $\Rightarrow$ satisfeito.
+    \item $t=1$: $move(a, T, 4, 1)$ — mover $a$ para a mesa em $p=4$.
+    \item $t=2$: $move(d, T, 2, 2)$ — mover $d$ para a mesa em $p=2$.
+    \item $t=3$: $move(a, c, 0, 3)$ — mover $a$ para cima de $c$ em $p=0$.
+\end{enumerate}
+
+\textbf{Estado final $S_{f4}$} ($t=4$):
+\[
+at(c,0,4) \wedge lev(c,0,4) \quad at(a,0,4) \wedge lev(a,1,4) \quad at(d,2,4) \wedge lev(d,0,4) \quad at(b,5,4) \wedge lev(b,0,4)
+\]
+
+\textbf{Relações $on$}: $on(a,c,4)$, $on(c,T,4)$, $on(d,T,4)$, $on(b,T,4)$. \checkmark
+
+\subsubsection{Situação 2: $S_0 \to S_5$}
+
+\begin{enumerate}[leftmargin=1.2cm]
+    \item $t=0$: $move(a, T, 0, 0)$ — mover $a$ para a mesa em $p=0$.
+    \item $t=1$: $move(b, T, 2, 1)$ — mover $b$ para a mesa em $p=2$.
+    \item $t=2$: $move(d, T, 3, 2)$ — mover $d$ para a mesa em $p=3$.
+    \item $t=3$: $move(c, d, 3, 3)$ — mover $c$ para cima de $d$ em $p=3$.
+    \item $t=4$: $move(a, c, 3, 4)$ — mover $a$ para cima de $c$ em $p=3$.
+    \item $t=5$: $move(b, c, 4, 5)$ — mover $b$ para cima de $c$ em $p=4$.
+\end{enumerate}
+
+\subsubsection{Situação 3: $S_0 \to S_7$}
+
+\begin{enumerate}[leftmargin=1.2cm]
+    \item $t=0$: $move(d, T, 0, 0)$ — mover $d$ para a mesa em $p=0$.
+    \item $t=1$: $move(a, T, 3, 1)$ — mover $a$ para a mesa em $p=3$.
+    \item $t=2$: $move(b, T, 4, 2)$ — mover $b$ para a mesa em $p=4$.
+    \item $t=3$: $move(c, T, 2, 3)$ — mover $c$ para a mesa em $p=2$.
+    \item $t=4$: $move(a, c, 0, 4)$ — mover $a$ para cima de $c$ em $p=0$.
+    \item $t=5$: $move(b, c, 1, 5)$ — mover $b$ para cima de $c$ em $p=1$.
+    \item $t=6$: $move(d, T, 3, 6)$ — mover $d$ para a mesa em $p=3$.
+\end{enumerate}
+
+\subsection{Resultados Obtidos pelo miniSAT}
+
+Esta subseção apresenta os planos \textbf{reais} gerados pelo miniSAT para cada cenário, obtidos pela execução do pipeline \texttt{bw2cnf\_var.py} $\to$ \texttt{minisat} $\to$ \texttt{interpretar.py}.
+
+\subsubsection{Cenário 1 — Situação 1, $S_0 \to S_{f4}$}
+
+\textbf{Configuração}: \texttt{HORIZON = 4}. \textbf{Resultado}: \texttt{SATISFIABLE} — plano mínimo de 4 ações.
+
+\begin{lstlisting}
+PLANO ENCONTRADO (4 acoes):
+1. t=0: mover bloco 'd' para CIMA de 'c' em p=0
+2. t=1: mover bloco 'a' para CIMA de 'b' em p=5
+3. t=2: mover bloco 'd' para a MESA em p=2
+4. t=3: mover bloco 'a' para CIMA de 'c' em p=0
+
+ESTADO FINAL (t=4):
+a: ponto inicial p=0, nivel l=1
+b: ponto inicial p=5, nivel l=0
+c: ponto inicial p=0, nivel l=0
+d: ponto inicial p=2, nivel l=0
+
+RELACOES 'on' em t=4:
+a esta sobre: c
+b esta sobre: MESA
+c esta sobre: MESA
+d esta sobre: MESA
+\end{lstlisting}
+
+\subsubsection{Cenário 2 — Situação 2, $S_0 \to S_5$}
+
+\textbf{Configuração}: \texttt{HORIZON = 5}. \textbf{Resultado}: \texttt{SATISFIABLE} — plano mínimo de 5 ações.
+
+\begin{lstlisting}
+PLANO ENCONTRADO (5 acoes):
+1. t=0: mover bloco 'a' para a MESA em p=2
+2. t=1: mover bloco 'b' para CIMA de 'd' em p=5
+3. t=2: mover bloco 'c' para CIMA de 'd' em p=3
+4. t=3: mover bloco 'a' para CIMA de 'c' em p=3
+5. t=4: mover bloco 'b' para CIMA de 'c' em p=4
+
+ESTADO FINAL (t=5):
+a: ponto inicial p=3, nivel l=2
+b: ponto inicial p=4, nivel l=2
+c: ponto inicial p=3, nivel l=1
+d: ponto inicial p=3, nivel l=0
+
+RELACOES 'on' em t=5:
+a esta sobre: c
+b esta sobre: c
+c esta sobre: d
+d esta sobre: MESA
+\end{lstlisting}
+
+\subsubsection{Cenário 3 — Situação 3, $S_0 \to S_7$}
+
+\textbf{Configuração}: \texttt{HORIZON = 6}. \textbf{Resultado}: \texttt{SATISFIABLE} — plano mínimo de 6 ações.
+
+\begin{lstlisting}
+PLANO ENCONTRADO (6 acoes):
+1. t=0: mover bloco 'd' para CIMA de 'c' em p=0
+2. t=1: mover bloco 'a' para CIMA de 'b' em p=5
+3. t=2: mover bloco 'd' para a MESA em p=2
+4. t=3: mover bloco 'a' para CIMA de 'c' em p=0
+5. t=4: mover bloco 'b' para CIMA de 'c' em p=1
+6. t=5: mover bloco 'd' para a MESA em p=3
+
+ESTADO FINAL (t=6):
+a: ponto inicial p=0, nivel l=1
+b: ponto inicial p=1, nivel l=1
+c: ponto inicial p=0, nivel l=0
+d: ponto inicial p=3, nivel l=0
+
+RELACOES 'on' em t=6:
+a esta sobre: c
+b esta sobre: c
+c esta sobre: MESA
+d esta sobre: MESA
+\end{lstlisting}
+
+\subsubsection{Resumo Comparativo}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{@{}ccccc@{}}
+\toprule
+\textbf{Cenário} & \texttt{HORIZON} & \textbf{Ações usadas} & \textbf{Mínimo comprovado} \\
+\midrule
+1 & 4 & 4 & 4 \\
+2 & 5 & 5 & 5 \\
+3 & 6 & 6 & 6 \\
+\bottomrule
+\end{tabular}
+\caption{Resumo dos resultados obtidos.}
+\end{table}
+
+% ============================================================
+% SEÇÃO 5 — MAPEAMENTO
+% ============================================================
+\section{Mapeamento: Descrição Formal $\to$ Código}
+\label{sec:mapeamento}
+
+\subsection{Estrutura do Código}
+
+O script \texttt{bw2cnf\_var.py} implementa a codificação CNF. Sua estrutura é:
+
+\begin{lstlisting}[language=Python, caption={Configuração inicial do cenário.}]
+INITIAL = {'c': (0,0), 'a': (3,0), 'b': (5,0), 'd': (3,1)}
+GOAL    = {'c': (0,0), 'a': (0,1), 'd': (2,0), 'b': (5,0)}
+HORIZON = 4
+
+BLOCKS = {
+    'a': {'len': 1},
+    'b': {'len': 1},
+    'c': {'len': 2},
+    'd': {'len': 3},
+}
+MAX_LEVEL = 3
+MAX_POINT = 6
+\end{lstlisting}
+
+\subsection{Mapeamento de Variáveis}
+
+Cada variável proposicional é mapeada para um ID inteiro. O arquivo \texttt{.map} gerado contém linhas como:
+
+\begin{lstlisting}[caption={Exemplo de arquivo .map.}]
+50 move(d, on=c, p=0, t=0)
+51 move(d, on=c, p=1, t=0)
+...
+100 at(a, p=0, t=0)
+101 at(a, p=1, t=0)
+...
+\end{lstlisting}
+
+\subsection{Tradução de Predicados}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{LPO} & \textbf{CNF} \\
+\midrule
+$at(b,p,t)$ & variável proposicional $at(b,p,t)$ \\
+$lev(b,l,t)$ & variável proposicional $lev(b,l,t)$ \\
+$clr(b,t)$ & variável proposicional $clr(b,t)$ \\
+$move(b,y,p,t)$ & variável proposicional $mv(b,y,p,t)$ \\
+$on(b,y,t)$ & derivada a posteriori (não codificada) \\
+$stable(b,p,l,t)$ & cláusula de cardinalidade \\
+\bottomrule
+\end{tabular}
+\caption{Mapeamento LPO $\to$ CNF.}
+\end{table}
+
+% ============================================================
+% SEÇÃO 6 — EXECUÇÃO PASSO A PASSO
+% ============================================================
+\section{Execução Passo a Passo: Gerar o CNF, Mapeamento e Execução}
+\label{sec:execucao}
+
+\subsection{Pré-requisitos}
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item Python 3.8+
+    \item miniSAT instalado (\texttt{sudo apt install minisat} no Linux base Debian)
+\end{itemize}
+
+\subsection{Estrutura de Pastas}
+
+\begin{lstlisting}
+Trabalho1A_MundoBlocos_Samuel_Mendes_Izumisawa/
+|-- README.md
+|-- src/
+|   |-- bw2cnf_var.py
+|   |-- interpretar.py
+|-- cnf/
+|   |-- trab01_blocos2SAT_sit1.cnf
+|   |-- trab01_blocos2SAT_sit2.cnf
+|   |-- trab01_blocos2SAT_sit3.cnf
+|-- map/
+|   |-- trab01_blocos2SAT_sit1.map
+|   |-- trab01_blocos2SAT_sit2.map
+|   |-- trab01_blocos2SAT_sit3.map
+|-- results/
+|   |-- resultado1.txt
+|   |-- resultado2.txt
+|   |-- resultado3.txt
+\end{lstlisting}
+
+\subsection{Procedimento de Execução}
+
+Para cada cenário, o procedimento é:
+
+\begin{enumerate}[leftmargin=1.2cm]
+    \item Editar o topo do \texttt{bw2cnf\_var.py} com \texttt{INITIAL}, \texttt{GOAL} e \texttt{HORIZON} do cenário.
+    \item Executar \texttt{python3 bw2cnf\_var.py} para gerar o arquivo CNF e o arquivo de mapeamento.
+    \item Executar o miniSAT sobre o CNF gerado (\texttt{minisat trab01\_blocos2SAT.cnf resultadoN.txt}).
+    \item Executar \texttt{python3 interpretar.py resultadoN.txt --map trab01\_blocos2SAT.map} para obter o plano em português.
+\end{enumerate}
+
+\subsection{Verificação de Otimalidade}
+
+Para cada cenário, executamos o miniSAT com \texttt{HORIZON} crescente a partir de $0$ até obter \texttt{SATISFIABLE}. O menor \texttt{HORIZON} que satisfaz é o comprimento mínimo do plano.
+
+Os resultados obtidos foram:
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item \textbf{Cenário 1}: UNSAT para $T = 0,1,2,3$; SAT em $T = 4$ $\Rightarrow$ mínimo $= 4$.
+    \item \textbf{Cenário 2}: UNSAT para $T = 0,1,2,3,4$; SAT em $T = 5$ $\Rightarrow$ mínimo $= 5$.
+    \item \textbf{Cenário 3}: UNSAT para $T = 0,1,2,3,4,5$; SAT em $T = 6$ $\Rightarrow$ mínimo $= 6$.
+\end{itemize}
+
+% ============================================================
+% SEÇÃO 7 — INTERPRETAÇÃO DA SAÍDA
+% ============================================================
+\section{Interpretação da Saída do SAT Solver}
+\label{sec:interpretacao}
+
+\subsection{O miniSAT Não Conhece Nomes Simbólicos}
+
+O miniSAT é um resolvedor puramente booleano. Ele devolve uma lista de inteiros (IDs das variáveis verdadeiras). Toda a tradução ``inteiro $\to$ símbolo'' é feita pelo arquivo \texttt{trab01\_blocos2SAT.map}, gerado automaticamente pelo \texttt{bw2cnf\_var.py}.
+
+\subsection{Da Saída Numérica ao Plano em Português}
+
+O script \texttt{interpretar.py} executa três passos:
+
+\begin{enumerate}[leftmargin=1.2cm]
+    \item \textbf{Leitura do mapa}: associa cada ID ao seu símbolo (por exemplo, \texttt{50 -> move(d, on=c, p=0, t=0)}).
+    \item \textbf{Filtragem}: mantém apenas literais positivos que são ações \texttt{move}.
+    \item \textbf{Ordenação temporal}: agrupa por $t$ e traduz para frases em português.
+\end{enumerate}
+
+\subsection{Derivação de \texttt{on}}
+
+A relação $on(b,y,T)$ no estado final é reconstruída a partir de:
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item $at(b, p_b, T)$ e $lev(b, l_b, T)$ — posição e nível de $b$.
+    \item Se $l_b = 0$: $on(b, T, T)$ (sobre a mesa).
+    \item Se $l_b > 0$: procura blocos $y$ com $lev(y, l_b-1, T)$ cujo span sobrepõe o span de $b$.
+\end{itemize}
+
+\subsection{Regra de Ouro}
+
+\textbf{Sem o arquivo \texttt{.map}, a saída numérica do miniSAT é apenas uma lista de inteiros sem significado para o domínio. Nunca interprete a saída sem o mapa correspondente.}
+
+% ============================================================
+% APÊNDICE
+% ============================================================
+\appendix
+\section{Resumo, Dicas e Lições Aprendidas}
+\label{sec:resumo}
+
+\subsection{Dicas Gerais}
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item Para provar que o plano é ótimo, execute o SAT solver para $T = 0, 1, 2, \dots$ até obter SATISFIABLE.
+    \item Para adicionar novos blocos, basta editar o dicionário \texttt{BLOCKS} e ajustar \texttt{MAX\_LEVEL}.
+    \item A ação $move(b, y, p, t)$ é qualitativa: lida como ``mover $b$ para cima de $y$ em $p$'' diretamente.
+    \item A relação $on(b, y, t)$ é derivada, não codificada.
+    \item Para ordem parcial, adicione cláusulas que ligam metas: se $\phi_1 \prec_P \phi_2$, então para todo $t$: $\neg \phi_2(t) \vee \phi_1(t')$ para algum $t' \le t$.
+\end{itemize}
+
+\subsection{Lições Aprendidas Durante a Implementação}
+
+\begin{enumerate}[leftmargin=1.2cm]
+    \item \textbf{Cláusulas de explicação de mudança são obrigatórias.} Sem elas, o solver pode ``teleportar'' blocos de um estado a outro sem nenhuma ação associada.
+    \item \textbf{$clr(y,t)$ global não serve para blocos de tamanhos variáveis.} Exigir que o topo do bloco-alvo esteja totalmente livre bloqueia empilhamentos corretos onde dois blocos menores pousam em slots diferentes do mesmo bloco maior.
+    \item \textbf{A pré-condição 4 (sobreposição) deve ser explícita na CNF.}
+    \item \textbf{\emph{No-op} é permitido.} O solver pode deixar janelas de tempo vazias, desde que chegue ao estado meta em \emph{até} $T$ passos.
+\end{enumerate}
+
+\end{document}
